@@ -5,7 +5,7 @@ import subprocess
 
 
 def get_base_path():
-    return "".join([os.getcwd().split("backend")[0], "backend"])
+    return "".join([os.getcwd(), "/"])
 
 
 def is_internet_connected():

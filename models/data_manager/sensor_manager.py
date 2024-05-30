@@ -2,6 +2,7 @@ from typing import Optional, List
 from models.data_manager.storage_manager import StorageManager
 from models import ModelLogger
 import asyncio
+import json
 
 
 class SensorManagerlogger:
@@ -14,16 +15,12 @@ class SensorManagerlogger:
 
 class SensorDataManager:
     """
-    Manages sensor data collection and temporary storage.
+    Manages sensor data collection.
 
     Attributes:
-    - COLLECTION_INTERVAL (Optional[int]): The interval for data collection in seconds.
     - data (dict): A dictionary to store sensor data.
-    - tmp_db (TempDB): An instance of TempDB for temporary data storage.
-    - sensors (list): A list of sensor instances.
-    """
 
-    COLLECTION_INTERVAL: Optional[int] = 10
+    """
 
     def __init__(self):
         """
@@ -34,11 +31,22 @@ class SensorDataManager:
 
     def manage_data(self, mqtt_msg):
         # algo that does some work
+        payload = mqtt_msg.payload.decode()
+        payload = json.loads(payload)
 
-
-        self.save_data(mqtt_msg.topic, mqtt_msg.payload.decode())
+        self.save_data(mqtt_msg.topic, payload)
 
     def save_data(self, topic, data):
         stg = StorageManager()
-        path = stg.get_db_path_from_topic(topic)
+        path = stg.create_db_path_from_topic(topic)
         stg.save(path, data)
+
+
+class MqttMessage:
+    def __init__(self, topic=None, payload=None):
+        self.topic = '/dev/test1'
+        self.payload = json.dumps({'dc-voltage': 240}).encode()
+
+if __name__ == '__main__':
+    manager = SensorDataManager()
+    manager.manage_data(MqttMessage())

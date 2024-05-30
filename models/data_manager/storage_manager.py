@@ -5,13 +5,13 @@ from util import get_base_path
 import os
 
 
-class DSlogger:
+class SMlogger:
     """
     Class for logging database activities.
     """
 
     logger = ModelLogger("data-saving").customiseLogger(
-        filename=os.path.join("{}".format(get_base_path()), "logs", "storage.log")
+        filepath=os.path.join("{}".format(get_base_path()), "logs", "storage.log")
     )
 
 
@@ -34,18 +34,18 @@ class StorageManager:
         Parameters:
         - kwargs: Additional parameters (locks, queues, or managers).
         """
-        pass
+        self.db = FileDB()
 
     def get_db_path_from_topic(self,topic):
-        pass
+        dir = self.db.get_db_filedir(create=False)
+        return os.path.join(dir, topic.lstrip("/"))
 
     def create_db_path_from_topic(self, topic: str):
-        db = FileDB()
-        dir = db.get_db_filedir()
-        db_path = os.path.join(dir, topic.lstrip("/"))
-        
+        path = self.get_db_path_from_topic(topic)
+        self.db.create_file(path)
+        return path
 
-    def save(self, path, data: Dict) -> None:
+    def save(self, path: str, data: Dict) -> None:
         """
         Save the collected data to the database.
 
@@ -55,4 +55,9 @@ class StorageManager:
         with FileDB(path, "a") as db:
             db.write_data_line(data)
 
-    
+
+if __name__ == "__main__":
+    stg = StorageManager()
+    path = stg.create_db_path_from_topic('/dev/test')
+    stg.save(path, {'topic':'/dev/test'})
+

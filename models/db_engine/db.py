@@ -155,7 +155,9 @@ class FileDB:
 
         Raises:
         - FileOpenError: If an error occurs while creating or opening the file.
-        """    
+        """
+
+        self.create_dir("/".join(path.split('/')[:-1]))
 
         if not self.file_exits(path):
             with FileDB(path, "x") as db:
@@ -191,7 +193,7 @@ class FileDB:
         """
         return os.path.exists(path)
 
-    def get_db_filedir(self) -> str:
+    def get_db_filedir(self, create=True) -> str:
         """
         Get the file path for the database based on the current date.
 
@@ -205,7 +207,8 @@ class FileDB:
             f"data/{year}/{month:02d}/{day:02d}",
         )
 
-        self.create_dir(dir)
+        if create:
+            self.create_dir(dir)
         return dir
 
     def set_target(self, path: str) -> str:
@@ -534,4 +537,3 @@ class MetaDB(FileDB):
         - str: The path to the metadata file.
         """
         return os.path.join("{}".format(get_base_path()), "config", "meta.txt")
-    

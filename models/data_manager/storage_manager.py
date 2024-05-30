@@ -39,6 +39,11 @@ class StorageManager:
     def get_db_path_from_topic(self,topic):
         pass
 
+    def create_db_path_from_topic(self, topic: str):
+        db = FileDB()
+        dir = db.get_db_filedir()
+        db_path = os.path.join(dir, topic.lstrip("/"))
+        
 
     def save(self, path, data: Dict) -> None:
         """

@@ -44,7 +44,7 @@ class FileDB:
     - create_file(path: Optional[str] = None) -> str: Create a file.
     - delete_file(path: str) -> None: Delete a file.
     - file_exits(path: str) -> bool: Check if a file exists.
-    - get_db_filepath() -> str: Get the file path for the database based on the current date.
+    - get_db_filedir() -> str: Get the file directory for the database based on the current date.
     - set_target(path: str) -> str: Set the target file path for the database.
     - open(path: Optional[str] = None, mode: str = "r+") -> io.TextIOWrapper: Open a file for reading or writing.
     - close() -> None: Close the currently open file.
@@ -143,7 +143,7 @@ class FileDB:
                 raise RemoveDirectoryError("Failed to remove directory: {}".format(dir))
         return dir
 
-    def create_file(self, path: Optional[str] = None) -> str:
+    def create_file(self, path: str) -> str:
         """
         Create a file.
 
@@ -155,9 +155,7 @@ class FileDB:
 
         Raises:
         - FileOpenError: If an error occurs while creating or opening the file.
-        """
-        if not path:
-            path = self.get_db_filepath()
+        """    
 
         if not self.file_exits(path):
             with FileDB(path, "x") as db:
@@ -193,7 +191,7 @@ class FileDB:
         """
         return os.path.exists(path)
 
-    def get_db_filepath(self) -> str:
+    def get_db_filedir(self) -> str:
         """
         Get the file path for the database based on the current date.
 
@@ -203,13 +201,12 @@ class FileDB:
         now = datetime.now()
         year, month, day = now.year, now.month, now.day
 
-        dir = os.path.join(
-            "".join([os.getcwd().split("backend")[0], "backend"]),
-            f"data/{year}/{month:02d}",
+        dir = os.path.join(get_base_path(),
+            f"data/{year}/{month:02d}/{day:02d}",
         )
 
         self.create_dir(dir)
-        return os.path.join(dir, f"{day:02d}.txt")
+        return dir
 
     def set_target(self, path: str) -> str:
         """

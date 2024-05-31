@@ -35,15 +35,14 @@ class TestFileDB(unittest.TestCase):
     def test_get_db_filepath(self):
         now = datetime.now()
         year, month, day = now.year, now.month, now.day
-        true_path = os.path.join(
-            "".join([os.getcwd().split("backend")[0], "backend"]),
-            f"data/{year}/{month:02d}/{day:02d}.txt",
+        true_path = os.path.join(os.getcwd(),
+            f"data/{year}/{month:02d}/{day:02d}",
         )
-        path = self.db.get_db_filepath()
+        path = self.db.get_db_filedir()
         self.assertEqual(path, true_path)
 
     def test_create_file_without_path(self):
-        true_path = self.db.get_db_filepath()
+        true_path = self.db.get_db_filedir()
         if not os.path.exists(true_path):
             path = self.db.create_file()
             self.assertTrue(os.path.exists(path))
@@ -157,7 +156,7 @@ class TestMetaDB(unittest.TestCase):
 
     def test_get_metadata_path(self):
         expected_path = os.path.join(
-            "".join([os.getcwd().split("backend")[0], "backend"]), "config", "meta.txt"
+            os.getcwd(), "config", "meta.txt"
         )
         path = self.db.get_metadata_path()
         self.assertEqual(expected_path, path)

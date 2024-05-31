@@ -40,6 +40,7 @@ class SensorDataManager:
         stg = StorageManager()
         path = stg.create_db_path_from_topic(topic)
         stg.save(path, data)
+        SensorManagerlogger.logger.info(f"{topic} data is saved")
 
 
 class MqttMessage:

@@ -22,7 +22,7 @@ class ModelLogger(BaseLogger):
                 fd.write("")
 
         self.setFileHandler(filepath)
-        # self.setStreamHandler()
+        self.setStreamHandler()
 
         if format:
             self.setFormatter(format)

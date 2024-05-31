@@ -9,7 +9,7 @@ class mqttManagerLogger:
     A logger class for SensorManager that customizes the ModelLogger.
     """
 
-    logger = ModelLogger("sensor-manager").customiseLogger()
+    logger = ModelLogger("mqtt-manager").customiseLogger()
 
 
 def on_connect(client, userdata, flags, rc, properties):

@@ -10,7 +10,7 @@ class SMlogger:
     Class for logging database activities.
     """
 
-    logger = ModelLogger("data-saving").customiseLogger(
+    logger = ModelLogger("storage-manager").customiseLogger(
         filepath=os.path.join("{}".format(get_base_path()), "logs", "storage.log")
     )
 

@@ -157,7 +157,7 @@ class FileDB:
         - FileOpenError: If an error occurs while creating or opening the file.
         """
 
-        self.create_dir("/".join(path.split('/')[:-1]))
+        self.create_dir("/".join(path.split("/")[:-1]))
 
         if not self.file_exits(path):
             with FileDB(path, "x") as db:
@@ -203,7 +203,8 @@ class FileDB:
         now = datetime.now()
         year, month, day = now.year, now.month, now.day
 
-        dir = os.path.join(get_base_path(),
+        dir = os.path.join(
+            get_base_path(),
             f"data/{year}/{month:02d}/{day:02d}",
         )
 

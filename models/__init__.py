@@ -17,7 +17,7 @@ class ModelLogger(BaseLogger):
         self.setLevel(level)
 
         if not os.path.exists(filepath):
-            os.makedirs("/".join(filepath.split('/')[:-1]), exist_ok=True)
+            os.makedirs("/".join(filepath.split("/")[:-1]), exist_ok=True)
             with open(filepath, "w") as fd:
                 fd.write("")
 

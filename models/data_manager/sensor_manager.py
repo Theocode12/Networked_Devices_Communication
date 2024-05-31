@@ -1,6 +1,7 @@
 from typing import Optional, List
 from models.data_manager.storage_manager import StorageManager
 from models import ModelLogger
+import paho.mqtt.client as mqtt
 import asyncio
 import json
 
@@ -16,10 +17,6 @@ class SensorManagerlogger:
 class SensorDataManager:
     """
     Manages sensor data collection.
-
-    Attributes:
-    - data (dict): A dictionary to store sensor data.
-
     """
 
     def __init__(self):
@@ -28,15 +25,27 @@ class SensorDataManager:
         """
         pass
 
+    def manage_data(self, mqtt_msg: mqtt.MQTTMessage) -> None:
+        """
+        Processes the incoming MQTT message and saves the data.
 
-    def manage_data(self, mqtt_msg):
+        Args:
+            mqtt_msg (mqtt.MQTTMessage): The MQTT message containing the sensor data.
+        """
         # algo that does some work
         payload = mqtt_msg.payload.decode()
         payload = json.loads(payload)
 
         self.save_data(mqtt_msg.topic, payload)
 
-    def save_data(self, topic, data):
+    def save_data(self, topic: str, data: dict) -> None:
+        """
+        Saves the sensor data to storage.
+
+        Args:
+            topic (str): The MQTT topic from which the data was received.
+            data (dict): The sensor data to be saved.
+        """
         stg = StorageManager()
         path = stg.create_db_path_from_topic(topic)
         stg.save(path, data)
@@ -45,9 +54,10 @@ class SensorDataManager:
 
 class MqttMessage:
     def __init__(self, topic=None, payload=None):
-        self.topic = '/dev/test1'
-        self.payload = json.dumps({'dc-voltage': 240}).encode()
+        self.topic = "/dev/test1"
+        self.payload = json.dumps({"dc-voltage": 240}).encode()
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     manager = SensorDataManager()
     manager.manage_data(MqttMessage())

@@ -1,6 +1,10 @@
 from models import ModelLogger
+from models.data_manager.storage_manager import StorageManager
 from typing import Tuple
 from os import getenv
+from util import fetch_url, get_urls_from_ips
+import asyncio
+import aiohttp
 import paho.mqtt.client as mqtt
 
 
@@ -120,7 +124,7 @@ class mqttManager:
         """
         self.client.publish(topic, payload)
 
-    def start(self) -> None:
+    async def start(self) -> None:
         """
         Starts the MQTT client's network loop.
         """
@@ -131,9 +135,72 @@ class mqttManager:
         Stops the MQTT client's network loop.
         """
         self.client.loop_stop()
+        self.client.disconnect()
 
     def disconnect(self) -> None:
         """
         Disconnects from the MQTT broker.
         """
         self.client.disconnect()
+
+class HTTPCommunicationManager:
+    def __init__(self, interval=900):
+        if getenv('ENV') == 'development':
+            self.env = 'dev'
+            self.ips = ['localhost']
+        else:
+            self.env = 'prod'
+            self.ips = getenv('DEVICE_IPS').split(',')
+        self.interval = interval
+        self.running = True
+        self.logger = ModelLogger("http-manager").customiseLogger()
+
+    def get_urls(self):
+        if self.env == 'dev':
+            urls = [url+':8080/status' for url in get_urls_from_ips(self.ips)]
+        else:
+            urls = [url+':/status' for url in get_urls_from_ips(self.ips)]
+        return urls
+
+    async def httpcom_task(self):
+        while self.running:
+            data = {}
+            results = await asyncio.gather(*(fetch_url(url) for url in self.get_urls()), return_exceptions=True)
+            for i, result in enumerate(results):
+                if not isinstance(result, Exception):
+                    for key, value in result.items():
+                        if key.endswith(')'):
+                            key = key.split('(')[0]
+                        data[key+'_'+str(i)] = value
+                else:
+                    self.logger.error(f"Error while fetching result {i}")
+            stg = StorageManager()
+
+            if getenv('ENV') == 'development':
+                path = stg.create_db_path_from_topic('dev/all')
+            else:
+                path = stg.create_db_path_from_topic(getenv("HTTP_TOPIC"))
+
+
+            stg.save(path, data)
+            await asyncio.sleep(self.interval)
+
+    def stop(self):
+        """
+        Stops the HTTP communication manager.
+        """
+        self.running = False
+        self.logger.info("HTTP communication manager stopped")
+
+
+async def main():
+    import dotenv
+    dotenv.load_dotenv('./config/.env')
+    hccm = HTTPCommunicationManager(2)
+    task = asyncio.create_task(hccm.httpcom_task())
+    await task
+    task.cancel()
+
+if __name__ == "__main__":
+    asyncio.run(main())
+

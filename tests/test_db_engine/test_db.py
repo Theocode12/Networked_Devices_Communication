@@ -35,7 +35,8 @@ class TestFileDB(unittest.TestCase):
     def test_get_db_filepath(self):
         now = datetime.now()
         year, month, day = now.year, now.month, now.day
-        true_path = os.path.join(os.getcwd(),
+        true_path = os.path.join(
+            os.getcwd(),
             f"data/{year}/{month:02d}/{day:02d}",
         )
         path = self.db.get_db_filedir()
@@ -155,9 +156,7 @@ class TestMetaDB(unittest.TestCase):
         self.assertDictEqual(self.db.meta, {})
 
     def test_get_metadata_path(self):
-        expected_path = os.path.join(
-            os.getcwd(), "config", "meta.txt"
-        )
+        expected_path = os.path.join(os.getcwd(), "config", "meta.txt")
         path = self.db.get_metadata_path()
         self.assertEqual(expected_path, path)
 

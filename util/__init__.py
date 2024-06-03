@@ -65,5 +65,6 @@ async def fetch_url(url, timeout=1):
                 raise e
     return data
 
+
 def get_urls_from_ips(ips: list):
-    return [f'http://{ip}' for ip in ips]
+    return [f"http://{ip}" for ip in ips]

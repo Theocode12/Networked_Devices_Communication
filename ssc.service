@@ -3,12 +3,12 @@ Description=Solar Station Communication Script
 After=network.target
 
 [Service]
-ExecStart=/home/Theo/Solar_Station_Communication/.venv/bin/python /home/Theo/Solar_Station_Communication/app.py
-WorkingDirectory=/home/Theo/Solar_Station_Communication
+ExecStart=/home/user/Solar_Station_Communication/.venv/bin/python /home/user/Solar_Station_Communication/appv2.py
+WorkingDirectory=/home/user/Solar_Station_Communication
 StandardOutput=inherit
 StandardError=inherit
 Restart=always
-User=Theo
+User=user
 
 [Install]
 WantedBy=multi-user.target

@@ -2,6 +2,7 @@ from dotenv import dotenv_values
 from typing import Union, Dict
 import os
 import subprocess
+import aiohttp
 
 
 def get_base_path():
@@ -53,3 +54,16 @@ def modify_data_to_dict(line: str) -> Dict[str, Union[str, float]]:
         data_dict[param.strip()] = value
 
     return data_dict
+
+
+async def fetch_url(url, timeout=1):
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url, timeout=timeout) as resp:
+            try:
+                data = await resp.json()
+            except Exception as e:
+                raise e
+    return data
+
+def get_urls_from_ips(ips: list):
+    return [f'http://{ip}' for ip in ips]

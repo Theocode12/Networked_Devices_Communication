@@ -1,3 +1,5 @@
+from config import SAVE_KEYS
+from datetime import datetime
 from models import ModelLogger
 from models.data_manager.storage_manager import StorageManager
 from typing import Tuple
@@ -6,6 +8,7 @@ from util import fetch_url, get_urls_from_ips
 import asyncio
 import aiohttp
 import paho.mqtt.client as mqtt
+import time
 
 
 class mqttManagerLogger:
@@ -143,47 +146,63 @@ class mqttManager:
         """
         self.client.disconnect()
 
+
 class HTTPCommunicationManager:
     def __init__(self, interval=900):
-        if getenv('ENV') == 'development':
-            self.env = 'dev'
-            self.ips = ['localhost']
+        self.ips = getenv("DEVICE_IPS").split(",")
+        if getenv("ENV") == "development":
+            self.env = "dev"
+            self.ips = "localhost"
+        elif getenv('ENV') == 'inter-development':
+            self.env = 'inter-dev'
         else:
-            self.env = 'prod'
-            self.ips = getenv('DEVICE_IPS').split(',')
+            self.env = "prod"
         self.interval = interval
         self.running = True
         self.logger = ModelLogger("http-manager").customiseLogger()
 
     def get_urls(self):
-        if self.env == 'dev':
-            urls = [url+':8080/status' for url in get_urls_from_ips(self.ips)]
+        if self.env == "dev":
+            urls = [url + ":8080/status" for url in get_urls_from_ips(self.ips)]
         else:
-            urls = [url+':/status' for url in get_urls_from_ips(self.ips)]
+            urls = [url + ":/status" for url in get_urls_from_ips(self.ips)]
         return urls
 
     async def httpcom_task(self):
+        self.logger.info("HTTP communication manager started ...")
+        time_now = time.perf_counter()
         while self.running:
-            data = {}
-            results = await asyncio.gather(*(fetch_url(url) for url in self.get_urls()), return_exceptions=True)
-            for i, result in enumerate(results):
-                if not isinstance(result, Exception):
-                    for key, value in result.items():
-                        if key.endswith(')'):
-                            key = key.split('(')[0]
-                        data[key+'_'+str(i)] = value
+            if (time.perf_counter() - time_now) > self.interval:
+                time_now = time.perf_counter()
+                data = {}
+                results = await asyncio.gather(
+                    *(fetch_url(url) for url in self.get_urls()), return_exceptions=True
+                )
+                for i, result in enumerate(results):
+                    if not isinstance(result, Exception):
+                        for key, value in result.items():
+                            if key in SAVE_KEYS:
+                                if key.endswith(")"):
+                                    key = key.split("(")[0]
+                                data[key + "_" + str(i)] = value
+                    else:
+                        self.logger.error(f"Error while fetching result {i}")
+                stg = StorageManager()
+
+                if self.env == "dev" or self.env == 'inter-dev':
+                    path = stg.create_db_path_from_topic("dev/all")
                 else:
-                    self.logger.error(f"Error while fetching result {i}")
-            stg = StorageManager()
+                    path = stg.create_db_path_from_topic(getenv("HTTP_TOPIC"))
 
-            if getenv('ENV') == 'development':
-                path = stg.create_db_path_from_topic('dev/all')
-            else:
-                path = stg.create_db_path_from_topic(getenv("HTTP_TOPIC"))
+                data.update(self.get_date_time())
+                stg.save(path, data)
+                self.logger.info("HTTP communication data stored")
 
+    def get_date_time(self):
+        date = str(datetime.now().date())
+        time = str(datetime.now().time()).split('.')[0]
 
-            stg.save(path, data)
-            await asyncio.sleep(self.interval)
+        return {'date': date, 'time': time}
 
     def stop(self):
         """
@@ -195,12 +214,13 @@ class HTTPCommunicationManager:
 
 async def main():
     import dotenv
-    dotenv.load_dotenv('./config/.env')
+
+    dotenv.load_dotenv("./config/.env")
     hccm = HTTPCommunicationManager(2)
     task = asyncio.create_task(hccm.httpcom_task())
     await task
     task.cancel()
 
+
 if __name__ == "__main__":
     asyncio.run(main())
-

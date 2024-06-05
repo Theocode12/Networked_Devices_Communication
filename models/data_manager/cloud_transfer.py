@@ -1,26 +1,22 @@
-from awscrt import mqtt
-from awsiot import mqtt_connection_builder
 from models.exceptions.exception import (
     AWSCloudConnectionError,
-    AWSCloudDisconnectError,
-    FileOpenError,
     AWSCloudUploadError,
 )
 from models.db_engine.db import MetaDB
 from models import ModelLogger
-from multiprocessing.connection import Connection, Pipe
-from multiprocessing import Process
+from multiprocessing.connection import Connection
 from typing import List, Dict, Union, Optional
-from time import sleep
 from util import (
     get_base_path,
     is_internet_connected,
-    env_variables,
     modify_data_to_dict,
 )
+from util import get_urls_from_ips, fetch_url
+from os import getenv
 import sys
 import json
 import os
+from dotenv import load_dotenv
 
 
 class CTFlogger:
@@ -28,223 +24,87 @@ class CTFlogger:
     Class for logging cloud transfer activities.
     """
 
-    logger = ModelLogger("cloud-transfer").customiseLogger(
-        filename=os.path.join(
-            "{}".format(get_base_path()), "logs", "cloud_transfer.log"
-        )
-    )
-
-
-def on_connection_interrupted(connection, error, **kwargs):
-    """
-    Callback function invoked when the MQTT connection is interrupted.
-
-    Parameters:
-        - connection: The MQTT connection object.
-        - error (str): The error message describing the interruption.
-        - **kwargs: Additional keyword arguments.
-    """
-
-    CTFlogger.logger.error("Connection interrupted. error: {}".format(error))
-
-
-def on_connection_resumed(connection, return_code, session_present, **kwargs):
-    """
-    Callback function invoked when the MQTT connection is resumed.
-
-    Parameters:
-        - connection: The MQTT connection object.
-        - return_code (int): The return code indicating the connection status.
-        - session_present (bool): Indicates if the session is present.
-        - **kwargs: Additional keyword arguments.
-    """
-    CTFlogger.logger.info(
-        "Connection resumed. return_code: {} session_present: {}".format(
-            return_code, session_present
-        )
-    )
-
-    if return_code == mqtt.ConnectReturnCode.ACCEPTED and not session_present:
-        CTFlogger.logger.info(
-            "Session did not persist. Resubscribing to existing topics..."
-        )
-        resubscribe_future, _ = connection.resubscribe_existing_topics()
-
-        # Cannot synchronously wait for resubscribe result because we're on the connection's event-loop thread,
-        # evaluate result with a callback instead.
-        resubscribe_future.add_done_callback(on_resubscribe_complete)
-
-
-def on_resubscribe_complete(resubscribe_future):
-    """
-    Callback function invoked when resubscription to topics is complete.
-
-    Parameters:
-        - resubscribe_future: The future object representing the resubscription process.
-    """
-    resubscribe_results = resubscribe_future.result()
-    CTFlogger.logger.info("Resubscribe results: {}".format(resubscribe_results))
-
-    for topic, qos in resubscribe_results["topics"]:
-        if qos is None:
-            sys.exit("Server rejected resubscribe to topic: {}".format(topic))
-
-
-def on_message_received(topic, payload, dup, qos, retain, **kwargs):
-    """
-    Callback function invoked when a message is received.
-
-    Parameters:
-        - topic (str): The topic from which the message was received.
-        - payload (bytes): The payload of the message.
-        - dup (bool): Indicates if the message is a duplicate.
-        - qos (int): The quality of service level.
-        - retain (bool): Indicates if the message should be retained.
-        - **kwargs: Additional keyword arguments.
-    """
-    CTFlogger.logger.info("Received message from topic '{}': {}".format(topic, payload))
-
-
-def on_connection_success(connection, callback_data):
-    """
-    Callback function invoked when the MQTT connection is successful.
-
-    Parameters:
-        - connection: The MQTT connection object.
-        - callback_data: Additional callback data.
-    """
-    assert isinstance(callback_data, mqtt.OnConnectionSuccessData)
-    CTFlogger.logger.info(
-        "Connection Successful with return code: {} session present: {}".format(
-            callback_data.return_code, callback_data.session_present
-        )
-    )
-
-
-def on_connection_failure(connection, callback_data):
-    """
-    Callback function invoked when the MQTT connection fails.
-
-    Parameters:
-        - connection: The MQTT connection object.
-        - callback_data: Additional callback data.
-    """
-    assert isinstance(callback_data, mqtt.OnConnectionFailureData)
-    CTFlogger.logger.warning(
-        "Connection failed with error code: {}".format(callback_data.error)
-    )
-
-
-def on_connection_closed(connection, callback_data):
-    """
-    Callback function to handle the event of a connection being closed.
-
-    Parameters:
-    - connection: The connection object.
-    - callback_data: Additional data associated with the callback.
-    """
-    CTFlogger.logger.warning("Connection closed")
+    logger = ModelLogger("cloud-transfer").customiseLogger()
 
 
 class CloudTransfer:
     """
-    CloudTransfer is responsible for establishing and managing MQTT connections for cloud data transfer.
+    This class helps in constructing URLs from environment variables and provided data lines,
+    and it provides functionality to push data to these URLs.
     """
-
-    endpoint = ""
-    cert_filepath = ""
-    pri_key_filepath = ""
-    ca_filepath = ""
-    client_id = ""
-    message_topic = ""
 
     def __init__(self) -> None:
         """
         Initialize the CloudTransfer instance and load environment variables.
+        It sets the base URL for data transfer by combining the host and sheet ID retrieved from environment variables.
         """
-        self.mqtt_connection = None
-        self.connected = False
-        self._load_env()
+        self.base_url = self.create_base_url()
 
-    @classmethod
-    def _load_env(cls) -> None:
+    def create_base_url(self):
         """
-        Load environment variables from the .env file.
-        """
-        for key, value in env_variables().items():
-            setattr(CloudTransfer, key, value)
+        Create the base URL for the Google Apps Script execution.
 
-    def connect(self) -> None:
+        Retrieves the host and Google Sheet ID from environment variables and constructs the base URL.
+
+        Returns:
+            str: The base URL constructed from the host and Google Sheet ID.
         """
-        Establish a connection to the MQTT broker.
-        """
-        self.mqtt_connection = mqtt_connection_builder.mtls_from_path(
-            endpoint=self.endpoint,
-            cert_filepath=self.cert_filepath,
-            pri_key_filepath=self.pri_key_filepath,
-            ca_filepath=self.ca_filepath,
-            on_connection_interrupted=on_connection_interrupted,
-            on_connection_resumed=on_connection_resumed,
-            client_id=self.client_id,
-            clean_session=False,
-            keep_alive_secs=30,
-            http_proxy_options=None,
-            on_connection_success=on_connection_success,
-            on_connection_failure=on_connection_failure,
-            on_connection_closed=on_connection_closed,
+        host = getenv("GOOGLE_HOST")
+        sheet_id = getenv("GOOGLE_SHEET_ID")
+        return "{}/macros/s/{}/exec".format(
+            get_urls_from_ips([host])[0],
+            sheet_id,
         )
 
-        try:
-            mqtt_future = self.mqtt_connection.connect()
-            # Future.result() waits until a result is available
-            mqtt_future.result(timeout=2)
-            CTFlogger.logger.info("Connection sucessfully established")
-            self.connected = True
-        except Exception:
-            CTFlogger.logger.error("Failed to establish connection")
-            raise AWSCloudConnectionError
+    def generate_query_string(self, data_line):
+        """
+        Generate a query string from a data line.
 
-    def disconnect(self) -> None:
-        """
-        Disconnect from the MQTT broker.
-        """
-        try:
-            disconnect_future = self.mqtt_connection.disconnect()
-            disconnect_future.result(2)
-            CTFlogger.logger.info("Disconnected successfully")
-            self.connected = False
-        except Exception:
-            raise AWSCloudDisconnectError
-
-    def publish(self, data: dict, timeout: int = 2) -> None:
-        """
-        Publish data to the specified MQTT topic.
+        Converts a data line into a dictionary and constructs a query string from the key-value pairs.
 
         Parameters:
-        - data (Dict[str, Any]): The data to be published.
-        - timeout (int): Timeout duration for the publish operation.
-        """
-        try:
-            message_json = json.dumps(data)
-            pub_future, id = self.mqtt_connection.publish(
-                topic=self.message_topic,
-                payload=message_json,
-                qos=mqtt.QoS.AT_LEAST_ONCE,
-            )
-            pub_future.result(timeout)
-            CTFlogger.logger.info("Data Published successfully")
-        except TimeoutError:
-            CTFlogger.logger.info("Data failed to publish")
-            raise AWSCloudUploadError("Data failed to publish")
+            data_line (str): A line of data to be converted into query parameters.
 
-    def subscribe(self, topic):
+        Returns:
+            str: The generated query string.
         """
-        Subscribe to the specified MQTT topic.
+        query_string = "?"
+        data_dict = modify_data_to_dict(data_line)
+        for key, value in data_dict.items():
+            query_string += "{}={}&".format(key, value)
+        return query_string.rstrip('&')
+
+    def create_url(self, data_line):
+        """
+        Create a complete URL with the base URL and query string.
+
+        Combines the base URL with the generated query string from the data line.
 
         Parameters:
-        - topic (str): The topic to subscribe to.
+            data_line (str): A line of data to be converted into query parameters and appended to the base URL.
+
+        Returns:
+            str: The complete URL with the base URL and query string.
         """
-        pass
+        return self.base_url + self.generate_query_string(data_line)
+
+    async def push_data_line(self, url, timeout: int = 2) -> None:
+        """
+        Push data to the specified URL asynchronously.
+
+        Attempts to fetch data from the URL with a specified timeout. Handles any exceptions that occur during the fetch.
+
+        Parameters:
+            url (str): The URL to which data is to be pushed.
+            timeout (int): Timeout duration (in seconds) for the fetch operation. Default is 2 seconds.
+
+        Returns:
+            None
+        """
+        try:
+            data = await fetch_url(url, 2, "text")
+        except:
+            pass  # Log some stuff
 
 
 class CloudTransferManager:
@@ -344,7 +204,7 @@ class CloudTransferManager:
         Returns:
         - bool: True if connected, False otherwise.
         """
-        return is_internet_connected() and self.cloud_transfer.connected
+        return is_internet_connected()
 
     def get_unuploaded_files(
         self, last_upload_file_date: List[str], db_path: str
@@ -388,7 +248,7 @@ class CloudTransferManager:
 
         return files_to_be_uploaded
 
-    def run(self, recv_cmd_pipe: Connection, data_pipe: Connection = None):
+    def run(self):
         """
         Logic for transferring data to cloud.
 
@@ -399,11 +259,6 @@ class CloudTransferManager:
         db = MetaDB()
 
         while True:
-            if recv_cmd_pipe.poll():
-                command = recv_cmd_pipe.recv()
-                if command == "END":
-                    CTFlogger.logger.info("Cloud Transfer Stopped")
-                    break
 
             if self._is_connected():
                 db.set_target(db.get_db_filepath())
@@ -431,16 +286,7 @@ class CloudTransferManager:
 
 
 if __name__ == "__main__":
+    load_dotenv("./config/.env")
     ctf = CloudTransfer()
-    ctf.connect()
-    if ctf.connected == True:
-        ctf.publish(
-            {
-                "longitude": "7.3733° E",
-                "latitude": "6.8429° N",
-                "current": "120",
-                "voltage": "48",
-                "power": "6560",
-            }
-        )
-        ctf.disconnect()
+    url = ctf.create_url('date=2024-06-05,time=03:22:00,Output_Watts_0=11,PV_Voltage_0=0,Buck_Converter_Current_0=0,PV_Power_0=1,Output_VA_0=179,Bus_Voltage_0=404.6,Battery_Voltage_0=0,Output_Watts_1=94,PV_Voltage_1=0,Buck_Converter_Current_1=0,PV_Power_1=0,Output_VA_1=179,Bus_Voltage_1=399.5,Battery_Voltage_1=0')
+    print(url)

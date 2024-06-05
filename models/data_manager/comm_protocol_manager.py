@@ -1,12 +1,12 @@
-from config import SAVE_KEYS
+from config import SAVE_KEYS, DUPLICATE_KEYS
 from datetime import datetime
 from models import ModelLogger
 from models.data_manager.storage_manager import StorageManager
+from typing import List, Dict, Union
 from typing import Tuple
 from os import getenv
 from util import fetch_url, get_urls_from_ips
 import asyncio
-import aiohttp
 import paho.mqtt.client as mqtt
 import time
 
@@ -148,63 +148,163 @@ class mqttManager:
 
 
 class HTTPCommunicationManager:
-    def __init__(self, interval=900):
-        self.ips = getenv("DEVICE_IPS").split(",")
+    def __init__(self, interval: int = 15) -> None:
+        """
+        Initializes the HTTPCommunicationManager.
+
+        Args:
+            interval (int, optional): Time interval in seconds between HTTP requests. Defaults to 900.
+        """
+        self.ips: List[str] = getenv("DEVICE_IPS").split(",")
         if getenv("ENV") == "development":
-            self.env = "dev"
-            self.ips = "localhost"
-        elif getenv('ENV') == 'inter-development':
-            self.env = 'inter-dev'
+            self.env: str = "dev"
+            self.ips: List[str] = ["localhost"]
+        elif getenv("ENV") == "inter-development":
+            self.env: str = "inter-dev"
         else:
-            self.env = "prod"
-        self.interval = interval
-        self.running = True
+            self.env: str = "prod"
+        print(self.env)
+        self.minute_interval: int = interval
+        self.running: bool = True
+        self.prev_min: Union[int, None] = None
         self.logger = ModelLogger("http-manager").customiseLogger()
 
-    def get_urls(self):
+    def get_urls(self) -> List[str]:
+        """
+        Generates URLs based on environment.
+
+        Returns:
+            List[str]: List of URLs.
+        """
         if self.env == "dev":
             urls = [url + ":8080/status" for url in get_urls_from_ips(self.ips)]
         else:
             urls = [url + ":/status" for url in get_urls_from_ips(self.ips)]
         return urls
 
-    async def httpcom_task(self):
+    async def httpcom_task(self) -> None:
+        """
+        Asynchronous task for HTTP communication.
+        """
         self.logger.info("HTTP communication manager started ...")
-        time_now = time.perf_counter()
+        stg_obj = StorageManager()
         while self.running:
-            if (time.perf_counter() - time_now) > self.interval:
-                time_now = time.perf_counter()
+            if self.is_save_time(minute_interval=self.minute_interval):
                 data = {}
+                data.update(self.get_date_time())
                 results = await asyncio.gather(
                     *(fetch_url(url) for url in self.get_urls()), return_exceptions=True
                 )
-                for i, result in enumerate(results):
-                    if not isinstance(result, Exception):
-                        for key, value in result.items():
-                            if key in SAVE_KEYS:
-                                if key.endswith(")"):
-                                    key = key.split("(")[0]
-                                data[key + "_" + str(i)] = value
-                    else:
-                        self.logger.error(f"Error while fetching result {i}")
-                stg = StorageManager()
+                self.format_data(results, data)
+                path = self.create_db_path(stg_obj)
+                self.save_data(stg_obj, path, data)
 
-                if self.env == "dev" or self.env == 'inter-dev':
-                    path = stg.create_db_path_from_topic("dev/all")
-                else:
-                    path = stg.create_db_path_from_topic(getenv("HTTP_TOPIC"))
+    def save_data(
+        self, stg_obj: StorageManager, path: str, data: Dict[str, Union[str, int]]
+    ) -> None:
+        """
+        Saves data to storage.
 
-                data.update(self.get_date_time())
-                stg.save(path, data)
-                self.logger.info("HTTP communication data stored")
+        Args:
+            stg_obj (Any): Storage object.
+            path (str): Path to save data.
+            data (Dict[str, Union[str, int]]): Data to save.
+        """
+        stg_obj.save(path, data)
+        self.logger.info("HTTP communication data stored")
 
-    def get_date_time(self):
-        date = str(datetime.now().date())
-        time = str(datetime.now().time()).split('.')[0]
+    def format_data(
+        self,
+        results: List[Union[Dict[str, Union[str, int]], Exception]],
+        data_obj: Dict[str, Union[str, int]],
+    ) -> None:
+        """
+        Formats the fetched data.
 
-        return {'date': date, 'time': time}
+        Args:
+            results (List[Union[Dict[str, Union[str, int]], Exception]]): Fetched results.
+            data_obj (Dict[str, Union[str, int]]): Data object to format.
+        """
+        duplicate = []
+        for i, result in enumerate(results):
+            if not isinstance(result, Exception):
+                for key, value in result.items():
+                    if (key in SAVE_KEYS) and (key not in duplicate):
+                        if key.endswith(")"):
+                            key = key.split("(")[0]
+                        if key in DUPLICATE_KEYS:
+                            duplicate.append(key)
+                            data_obj[key] = value
+                        else:
+                            data_obj[key + "_" + str(i)] = value
+            else:
+                self.logger.error(f"Error while fetching result {i}")
 
-    def stop(self):
+    def create_db_path(self, stg_obj: StorageManager) -> str:
+        """
+        Creates a database path based on environment.
+
+        Args:
+            stg_obj (Any): Storage object.
+
+        Returns:
+            str: Database path.
+        """
+        if self.env == "dev" or self.env == "inter-dev":
+            path = stg_obj.create_db_path_from_topic("dev/all")
+        else:
+            path = stg_obj.create_db_path_from_topic(getenv("HTTP_TOPIC"))
+        return path
+
+    def is_save_time(self, curr_time: str = None, minute_interval: int = 15) -> bool:
+        """
+        Checks if it's time to save data.
+
+        Args:
+            curr_time (str, optional): Current time string. Defaults to None.
+            minute_interval (int, optional): Interval in minutes. Defaults to 15.
+
+        Returns:
+            bool: True if it's time to save data, False otherwise.
+        """
+        if not curr_time:
+            curr_time = self.get_time()
+        curr_min = int(curr_time.split(":")[1])
+        if (not (curr_min % minute_interval)) and (
+            (self.prev_min != curr_min) or (self.prev_min is None)
+        ):
+            self.prev_min = curr_min
+            return True
+        return False
+
+    def get_date_time(self) -> Dict[str, str]:
+        """
+        Gets the current date and time.
+
+        Returns:
+            Dict[str, str]: Dictionary containing date and time.
+        """
+        return {"date": self.get_date(), "time": self.get_time()}
+
+    def get_date(self) -> str:
+        """
+        Gets the current date.
+
+        Returns:
+            str: Current date.
+        """
+        return str(datetime.now().date())
+
+    def get_time(self) -> str:
+        """
+        Gets the current time.
+
+        Returns:
+            str: Current time.
+        """
+        return datetime.now().time().strftime("%H:%M:%S")
+
+    def stop(self) -> None:
         """
         Stops the HTTP communication manager.
         """

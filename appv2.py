@@ -1,8 +1,30 @@
+from models import ModelLogger
+from models.data_manager.comm_protocol_manager import mqttManager
+from models.data_manager.comm_protocol_manager import HTTPCommunicationManager
+from dotenv import load_dotenv
 import asyncio
 import signal
-from models.data_manager.mqtt_manager import mqttManager
-from models.data_manager.mqtt_manager import HTTPCommunicationManager
-from dotenv import load_dotenv
+import sys
+import os
+
+
+class APPlogger:
+    """
+    A logger class for SensorManager that customizes the ModelLogger.
+    """
+
+    logger = ModelLogger("app").customiseLogger()
+
+
+def signal_handler(sig, frame):
+    """
+    Handle termination signals to gracefully shut down the application.
+    """
+    mqtt_manager.stop()
+    http_com_manager.stop()
+    APPlogger.logger.info("Application terminated gracefully")
+    sys.exit(0)
+
 
 async def main(mqtt_manager, http_com_manager):
     # Run both managers concurrently
@@ -11,40 +33,21 @@ async def main(mqtt_manager, http_com_manager):
     await asyncio.gather(task_1, task_2)
 
 
-async def shutdown(loop, mqtt_manager, http_com_manager):
-    """
-    Clean-up function to gracefully shutdown the application.
-    """
-    mqtt_manager.stop()
-    http_com_manager.stop()
-    await asyncio.sleep(1.1)
-    loop.stop()
-
-def pre_shutdown(loop, mqtt_manager, http_com_manager):
-    asyncio.create_task(shutdown(loop, mqtt_manager, http_com_manager))
-
 if __name__ == "__main__":
     load_dotenv("./config/.env")
+    APPlogger.logger.info("Application started")
 
     # Initialize managers
     mqtt_manager = mqttManager()
     mqtt_manager.use_default_user_passwd_credentials()
     mqtt_manager.connect()
-    http_com_manager = HTTPCommunicationManager(interval=10)  # 15 minutes interval
+    http_com_manager = HTTPCommunicationManager(interval=1)  # 15 minutes interval
 
-    loop = asyncio.get_event_loop()
+    # Register signal handlers for graceful termination
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
 
-    # Register signal handlers
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, pre_shutdown, loop, mqtt_manager, http_com_manager)
+    asyncio.run(main(mqtt_manager, http_com_manager))
 
-    try:
-        # Run main application
-        loop.run_until_complete(main(mqtt_manager, http_com_manager))
-    except KeyboardInterrupt as e:
-        raise e
-    finally:
-        # Clean-up
-        mqtt_manager.stop()
-        http_com_manager.stop()
-        loop.close()
+    # Keep the application running
+    signal.pause()

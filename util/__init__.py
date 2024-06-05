@@ -56,11 +56,14 @@ def modify_data_to_dict(line: str) -> Dict[str, Union[str, float]]:
     return data_dict
 
 
-async def fetch_url(url, timeout=1):
+async def fetch_url(url, timeout=1, data_type="json"):
     async with aiohttp.ClientSession() as session:
         async with session.get(url, timeout=timeout) as resp:
             try:
-                data = await resp.json()
+                if data_type == "json":
+                    data = await resp.json()
+                elif data_type == "text":
+                    data = await resp.text()
             except Exception as e:
                 raise e
     return data

@@ -365,7 +365,9 @@ class MetaDB(FileDB):
     - get_metadata_path() -> str: Get the path to the metadata file.
     """
 
-    def __init__(self):
+    def __init__(
+        self, metadata_path=None, path: Optional[str] = None, mode: Optional[str] = None
+    ):
         """
         Initialize a MetaDB instance.
 
@@ -375,9 +377,10 @@ class MetaDB(FileDB):
         """
         self.meta = {}
         self.metadata_lines: List[str] = []
-        super().__init__()
+        self.metadata_path = metadata_path
+        super().__init__(path, mode)
 
-    def retrieve_metadata_lines(
+    def get_all_metadata_lines(
         self, path: Optional[str] = None, forcedb: bool = True
     ) -> List[str]:
         """
@@ -390,14 +393,14 @@ class MetaDB(FileDB):
         Returns:
         - List[str]: A list of lines from the metadata file.
         """
-        if not path:
+        if (not path) and (not self.metadata_path):
             path = self.get_metadata_path()
+        elif not path:
+            path = self.metadata_path
+
         if forcedb:
-            self.set_target(path)
-            with self:
-                self.metadata_lines = [
-                    line.rstrip("\n") for line in super().readlines()
-                ]
+            with FileDB(path, "r") as fdb:
+                self.metadata_lines = [line.rstrip("\n") for line in fdb.readlines()]
 
         return self.metadata_lines
 
@@ -423,7 +426,7 @@ class MetaDB(FileDB):
             self.metadata_lines.append("{}={}".format(key, meta[key]))
         return self.metadata_lines
 
-    def retrieve_metadata(
+    def get_all_metadata(
         self, path: Optional[str] = None, meta: List[str] = [], forcedb: bool = True
     ) -> Dict[str, str]:
         """
@@ -437,13 +440,16 @@ class MetaDB(FileDB):
         Returns:
         - Dict[str, str]: The retrieved metadata.
         """
-        lines = self.retrieve_metadata_lines(path, forcedb)
+        lines = self.get_all_metadata_lines(path, forcedb)
         for line in lines:
             if not line.startswith("#") and "=" in line:
                 key, val = [line.strip() for line in line.split("=")]
                 if not meta or key in meta:
                     self.meta[key] = convert_to_int_or_leave_unchanged(val)
         return self.meta
+
+    def get_metadata(self, metadata_key) -> Any:
+        return self.meta.get(metadata_key)
 
     def save_metadata(
         self, path: Optional[str] = None, meta: Optional[Dict[str, Any]] = None
@@ -460,19 +466,21 @@ class MetaDB(FileDB):
         Raises:
         - Exception: If an error occurs while saving the metadata.
         """
-        if not path:
+        if (not path) and (not self.metadata_path):
             path = self.get_metadata_path()
+        elif not path:
+            path = self.metadata_path
 
         if not meta:
             meta = self.meta
 
         if self.file_exits(path):
-            self.retrieve_metadata_lines(path)
+            self.get_all_metadata_lines(path)
 
-        with self as db:
-            for line in self.update_metadata_lines(meta):
-                db.write(line + "\n")
-        DBlogger.logger.info("Updated metadata saved to file")
+            with FileDB(path, "w") as db:
+                for line in self.update_metadata_lines(meta):
+                    db.write(line + "\n")
+            DBlogger.logger.info("Updated metadata saved to file")
 
     def clear_metadata(self) -> None:
         """
@@ -496,7 +504,7 @@ class MetaDB(FileDB):
             self.meta.update(newmeta)
         return self.meta
 
-    def readline(self, offset: int = None) -> str:
+    def readline(self, offset: int = None) -> Tuple[str, str]:
         """
         Read a line from the open file.
 
@@ -509,10 +517,10 @@ class MetaDB(FileDB):
         Raises:
         - Exception: If an error occurs while reading from the file.
         """
-        self.fd.seek(offset or self.meta.get("Offset", 0))
+        self.fd.seek(offset)
         line = super().readline()
-        self.update_metadata({"Offset": self.fd.tell()})
-        return line
+        new_offset = self.fd.tell()
+        return (line, new_offset)
 
     def readlines(self, offset: int = None) -> List[str]:
         """
@@ -527,8 +535,7 @@ class MetaDB(FileDB):
         if offset is not None:
             self.fd.seek(offset)
         lines = super().readlines()
-        self.update_metadata({"Offset": self.fd.tell()})
-        return lines
+        return (lines, self.fd.tell())
 
     def get_metadata_path(self) -> str:
         """

@@ -1,0 +1,2 @@
+LastUploadedFile=/home/valentine/Solar_Station_Communication/data/2024/06/03/inverter/all
+LastUploadedFileOffset=1022

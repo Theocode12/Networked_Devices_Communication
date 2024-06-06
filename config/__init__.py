@@ -10,4 +10,4 @@ SAVE_KEYS = set(
     ]
 )
 
-DUPLICATE_KEYS = set(['Vbat'])
+DUPLICATE_KEYS = set(["Vbat"])

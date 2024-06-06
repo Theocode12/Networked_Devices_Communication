@@ -182,7 +182,7 @@ class HTTPCommunicationManager:
             urls = [url + ":/status" for url in get_urls_from_ips(self.ips)]
         return urls
 
-    async def httpcom_task(self) -> None:
+    async def start(self) -> None:
         """
         Asynchronous task for HTTP communication.
         """
@@ -211,7 +211,7 @@ class HTTPCommunicationManager:
             data (Dict[str, Union[str, int]]): Data to save.
         """
         stg_obj.save(path, data)
-        self.logger.info("HTTP communication data stored")
+        self.logger.info("Data from atleast one inverter is  data stored")
 
     def format_data(
         self,
@@ -238,7 +238,7 @@ class HTTPCommunicationManager:
                         else:
                             data_obj[key + "_" + str(i)] = value
             else:
-                self.logger.error(f"Error while fetching result {i}")
+                self.logger.error(f"Error while fetching result {i} with ip {self.ips[i]}")
 
     def create_db_path(self, stg_obj: StorageManager) -> str:
         """
@@ -293,7 +293,7 @@ class HTTPCommunicationManager:
         Returns:
             str: Current date.
         """
-        return str(datetime.now().date())
+        return datetime.now().date().strftime('%d/%m/%Y')
 
     def get_time(self) -> str:
         """
@@ -316,8 +316,8 @@ async def main():
     import dotenv
 
     dotenv.load_dotenv("./config/.env")
-    hccm = HTTPCommunicationManager(2)
-    task = asyncio.create_task(hccm.httpcom_task())
+    hccm = HTTPCommunicationManager(1)
+    task = asyncio.create_task(hccm.start())
     await task
     task.cancel()
 

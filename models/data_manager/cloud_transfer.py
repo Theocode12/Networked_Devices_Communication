@@ -5,7 +5,7 @@ from models.exceptions.exception import (
 from models.db_engine.db import MetaDB
 from models import ModelLogger
 from multiprocessing.connection import Connection
-from typing import List, Dict, Union, Optional
+from typing import List, Dict, Union, Optional, Iterator
 from util import (
     get_base_path,
     is_internet_connected,
@@ -16,6 +16,7 @@ from os import getenv
 import sys
 import json
 import os
+import datetime
 from dotenv import load_dotenv
 
 
@@ -42,7 +43,7 @@ class CloudTransfer:
         """
         self.base_url = self.create_base_url()
 
-    def create_base_url(self):
+    def create_base_url(self) -> str:
         """
         Create the base URL for the Google Apps Script execution.
 
@@ -59,7 +60,7 @@ class CloudTransfer:
             sheet_id,
         )
 
-    def generate_query_string(self, data_line):
+    def generate_query_string(self, data_line: str) -> str:
         """
         Generate a query string from a data line.
 
@@ -78,7 +79,7 @@ class CloudTransfer:
             query_string += "{}={}&".format(key, value)
         return query_string.rstrip("&")
 
-    def create_url(self, data_line):
+    def create_url(self, data_line) -> str:
         """
         Create a complete URL with the base URL and query string.
 
@@ -108,10 +109,10 @@ class CloudTransfer:
             None
         """
         try:
-            pass
-            # data = await fetch_url(url, 2, "text")
+            
+            data = await fetch_url(url, 10, "text")
         except:
-            pass  # Log some stuff
+            CTFlogger.logger.error('Failed to upload data to google sheet')
 
 
 class CloudTransferManager:
@@ -130,8 +131,9 @@ class CloudTransferManager:
         - lock (Optional[object]): An optional lock object for resource synchronization.
         """
         self.cloud_transfer = CloudTransfer()
+        self.running = True
 
-    def batch_upload(
+    async def batch_upload(
         self,
         base_path: Optional[str] = None,
     ) -> None:
@@ -141,29 +143,25 @@ class CloudTransferManager:
         Parameters:
         - base_path (Optional[str]): The base path for file storage.
         """
-        # Whole function to be partially fixed
-        # Only works on Linux and Mac OS
+        meta_db = MetaDB()
         if not base_path:
             base_path = get_base_path()
-        CTFlogger.logger.info("Starting Batch Upload")
-        db_path = os.path.join(base_path, "data/")
-        # Remember to lock resources (file when using them)
-        metadata = self.meta_db.retrieve_metadata()
-        last_upload_filepath = metadata.get("LastUploadFile")
+        db_root = os.path.join(base_path, "data/")
+        metadata = meta_db.get_all_metadata()
+        last_upload_filepath = metadata.get("LastUploadedFile")
         if (
             last_upload_filepath is not None
             and last_upload_filepath
             and self._is_connected()
         ):
             try:
-                last_upload_date = last_upload_filepath.replace(db_path, "")
-                files = self.get_unuploaded_files(last_upload_date.split("/"), db_path)
-                self.upload_files(db_path, files)
+                CTFlogger.logger.info("Starting Batch Upload")
+                await self.upload_files(last_upload_filepath, db_root)
                 CTFlogger.logger.info("Batch upload complete")
             except CloudUploadError as e:
                 raise e
 
-    async def upload_files(self, base_path: str, files: List[str]) -> None:
+    async def upload_files(self, last_upload_filepath: str, db_root: str) -> None:
         """
         Upload a list of files to the cloud.
 
@@ -171,9 +169,7 @@ class CloudTransferManager:
         - base_path (str): The base path for file storage.
         - files (List[str]): A list of files to upload.
         """
-
-        for file in files:
-            filepath = os.path.join(base_path, file)
+        for filepath in self.get_unuploaded_files(last_upload_filepath, db_root): 
             try:
                 await self.upload_file(filepath)
             except Exception as e:
@@ -203,7 +199,9 @@ class CloudTransferManager:
             finished = False
             while self._is_connected():
                 line = meta_db.fd.readline()
+                print(line)
                 if not line:
+                    print('here')
                     finished = True
                     break  # End of file
                 url = self.cloud_transfer.create_url(line)
@@ -229,8 +227,8 @@ class CloudTransferManager:
         return is_internet_connected()
 
     def get_unuploaded_files(
-        self, last_upload_file_date: List[str], db_path: str
-    ) -> List[str]:
+        self, last_upload_filepath: str, db_path: str
+    ) -> Iterator[str]:
         """
         Get a list of unuploaded files based on the last upload file date.
 
@@ -241,88 +239,53 @@ class CloudTransferManager:
         Returns:
         - List[str]: A list of unuploaded files.
         """
-        # files_to_be_uploaded = []
+        last_upload_date = datetime.datetime.strptime(last_upload_filepath, 
+        os.path.join(db_path, '%Y/%m/%d/inverter/all'))
+        current_date = datetime.datetime.now()
+        date_range = (current_date - last_upload_date).days
+        for i in range(1, date_range+1):
+            date = last_upload_date + datetime.timedelta(days=i)
+            dir_path = os.path.join(db_path, date.strftime('%Y/%m/%d'), 'inverter', 'all')
+            if os.path.exists(dir_path):
+                yield dir_path
 
-        # # Function to filter directories and files based on LastUploadFile
-        # def filter_dirs_or_files(files, index):
-        #     try:
-        #         file_index = files.index(last_upload_file_date[index])
-        #         for file in files[:file_index]:
-        #             files.remove(file)
-        #     except ValueError:
-        #         pass
-
-        # for root, dirs, files in os.walk(db_path):
-        #     dirs.sort()
-        #     files.sort()
-
-        #     # Filter directories based on LastUploadFile
-        #     filter_dirs_or_files(dirs, 0)  # Year
-        #     filter_dirs_or_files(dirs, 1)  # Month
-
-        #     # Filter files based on LastUploadFile
-        #     filter_dirs_or_files(files, 2)  # Day
-
-        #     # Append the remaining files to files_to_be_uploaded
-        #     print(files)
-        #     files_to_be_uploaded.extend(
-        #         os.path.join(root[-7:], file) for file in files
-        #     )  # Fix magic number 7
-
-        # return files_to_be_uploaded
-        pass  # TO BE TOTALLY FIXED
-
-    def start(self):
+    async def start(self):
         """
         Logic for transferring data to cloud.
-
-        Parameters:
-        - recv_cmd_pipe (Connection): Pipe to receive commands.
-        - data_pipe (Optional[Connection]): Unused for now.
         """
-        db = MetaDB()
 
-        while True:
-
+        while self.running:
             if self._is_connected():
-                db.set_target(db.get_db_filepath())
-                if db.target != self.meta_db.retrieve_metadata(
-                    path=db.get_metadata_path()
-                ).get("LastUploadFile"):
-                    try:
-                        self.batch_upload()
-                    except CloudUploadError:
-                        continue
-                else:
-                    db.get_all_metadata()
-                    db.set_target(db.get_db_filepath())
-                    with db as db_connection:
-                        line = db_connection.readline()
-                    if line:
-                        data = modify_data_to_dict(line)
-                        self.cloud_transfer.publish(data)  # fix publish timeout
-                        db.save_metadata()
-            else:
                 try:
-                    self.cloud_transfer.connect()
-                except AWSCloudConnectionError:
-                    pass
+                    await self.batch_upload()
+                except CloudUploadError:
+                    continue
+
+    def stop(self):
+        self.running = False
+        CTFlogger.logger.info("Cloud Trasfer manager stopped")
 
 
 if __name__ == "__main__":
     import asyncio
 
     load_dotenv("./config/.env")
-    # ctf = CloudTransfer()
-    # url = ctf.create_url('date=2024-06-05,time=03:22:00,Output_Watts_0=11,PV_Voltage_0=0,Buck_Converter_Current_0=0,PV_Power_0=1,Output_VA_0=179,Bus_Voltage_0=404.6,Battery_Voltage_0=0,Output_Watts_1=94,PV_Voltage_1=0,Buck_Converter_Current_1=0,PV_Power_1=0,Output_VA_1=179,Bus_Voltage_1=399.5,Battery_Voltage_1=0')
+    ctf = CloudTransfer()
+    url = ctf.create_url('date=06/06/2024,time=21:28:00,PoutW_0=0,Vpv_0=0,BuckCurr_0=0,Ppv_0=0,PoutVA_0=193,BusVolt_0=407.9,Vbat=50.8,PoutW_1=210,Vpv_1=0,BuckCurr_1=0,Ppv_1=0,PoutVA_1=244,BusVolt_1=402.5,PoutW_2=127,Vpv_2=0,BuckCurr_2=0,Ppv_2=0,PoutVA_2=193,BusVolt_2=405.6')
+    asyncio.run(ctf.push_data_to_datasheet(url))
     # print(url)
-    ctfm = CloudTransferManager()
+    # print(is_internet_connected())
+    # ctfm = CloudTransferManager()
+    # asyncio.run(ctfm.start())
+    # asyncio.run(ctfm.upload_files('/home/user/Solar_Station_Communication/data/2024/06/03/inverter/all', '/home/user/Solar_Station_Communication/data/'))
+    # for filepath in ctfm.get_unuploaded_files('/home/user/Solar_Station_Communication/data/2024/06/03/inverter/all', '/home/user/Solar_Station_Communication/data/'):
+    #     print(filepath)
     # files = ctfm.get_unuploaded_files(
     #     ["30", "05", "2024"], "/home/valentine/Solar_Station_Communication/data"
     # )
     # print(files)
-    asyncio.run(
-        ctfm.upload_file(
-            "/home/valentine/Solar_Station_Communication/data/2024/06/03/inverter/all"
-        )
-    )
+    # asyncio.run(
+    #     ctfm.upload_file(
+    #         "/home/valentine/Solar_Station_Communication/data/2024/06/03/inverter/all"
+    #     )
+    # )

@@ -178,7 +178,7 @@ class TestMetaDB(unittest.TestCase):
         self.db.target = tempfile.mkstemp(dir=self.tmpdir.name, text=True)[1]
 
         # Test when file is empty
-        lines = self.db.retrieve_metadata_lines(self.db.target)
+        lines = self.db.get_all_metadata_lines(self.db.target)
         self.assertEqual(len(lines), 0)
 
         # write to the file
@@ -188,7 +188,7 @@ class TestMetaDB(unittest.TestCase):
                 fd.write(line + "\n")
 
         # Test when file is not empty
-        lines = self.db.retrieve_metadata_lines(self.db.target)
+        lines = self.db.get_all_metadata_lines(self.db.target)
         self.assertEqual(lines, w_lines)
         self.assertEqual(w_lines, self.db.metadata_lines)
 
@@ -256,7 +256,7 @@ class TestMetaDB(unittest.TestCase):
                 fd.write(line + "\n")
 
         # Retrive metadata without args
-        meta = self.db.retrieve_metadata(self.db.target)
+        meta = self.db.get_all_metadata(self.db.target)
         true_meta = {
             "Offset": 0,
             "file": "/tmp/test",
@@ -267,7 +267,7 @@ class TestMetaDB(unittest.TestCase):
 
         # Retrieve metadata with args
         self.db.clear_metadata()
-        meta = self.db.retrieve_metadata(self.db.target, ["Offset", "GPS", "Compass"])
+        meta = self.db.get_all_metadata(self.db.target, ["Offset", "GPS", "Compass"])
         true_meta = {"Offset": 0, "GPS": "GPSTracker"}
         self.assertDictEqual(meta, true_meta)
 
@@ -340,7 +340,7 @@ class TestMetaDB(unittest.TestCase):
                 fd.write(line + "\n")
 
         # Test if Offset value changes for first read
-        meta = self.db.retrieve_metadata(self.db.target).copy()
+        meta = self.db.get_all_metadata(self.db.target).copy()
         self.db.open(self.db.target, "r")
         line = self.db.readline()
         self.db.close()
@@ -374,7 +374,7 @@ class TestMetaDB(unittest.TestCase):
             for line in metadata_lines:
                 fd.write(line + "\n")
 
-        meta = self.db.retrieve_metadata(self.db.target).copy()
+        meta = self.db.get_all_metadata(self.db.target).copy()
         self.db.open(self.db.target, "r")
         line = self.db.readlines()
         self.db.close()
@@ -421,7 +421,7 @@ class TestMetaDB(unittest.TestCase):
                 line = ",".join([f"{key}={value}" for key, value in datum.items()])
                 file.write(line + "\n")
 
-        metadata = self.db.retrieve_metadata(metafile).copy()
+        metadata = self.db.get_all_metadata(metafile).copy()
         # Assert that the metadata is empty
         self.assertDictEqual(metadata, {})
 
@@ -438,7 +438,7 @@ class TestMetaDB(unittest.TestCase):
 
         self.db.save_metadata(metafile)
 
-        retrived_metadata = self.db.retrieve_metadata(metafile).copy()
+        retrived_metadata = self.db.get_all_metadata(metafile).copy()
 
         # Assert Metadata is same after saving and retrival
         self.assertEqual(retrived_metadata, newmeta_1)

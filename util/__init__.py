@@ -4,7 +4,6 @@ import os
 import subprocess
 import aiohttp
 
-
 def get_base_path():
     return "".join([os.getcwd(), "/"])
 

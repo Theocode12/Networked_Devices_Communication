@@ -1,20 +1,16 @@
 from models.exceptions.exception import (
-    AWSCloudConnectionError,
     CloudUploadError,
 )
 from models.db_engine.db import MetaDB
 from models import ModelLogger
-from multiprocessing.connection import Connection
 from typing import List, Dict, Union, Optional, Iterator
 from util import (
     get_base_path,
     is_internet_connected,
     modify_data_to_dict,
 )
-from util import get_urls_from_ips, fetch_url
+from util import get_urls_from_ips, fetch_url_spreadsheet
 from os import getenv
-import sys
-import json
 import os
 import datetime
 from dotenv import load_dotenv
@@ -109,9 +105,12 @@ class CloudTransfer:
             None
         """
         try:
-            data = await fetch_url(url)
-            if "success" not in data:
-                raise CloudUploadError
+            print('to push to spreadsheet')
+            data = await fetch_url_spreadsheet(url)
+            print(data)
+            # if "success" not in data:
+            #     raise CloudUploadError
+            CTFlogger.logger.info('Data successfully upload to datasheet')
         except:
             CTFlogger.logger.error("Failed to upload data to google sheet")
             raise CloudUploadError
@@ -125,7 +124,7 @@ class CloudTransferManager:
 
     collection_interval: Optional[int] = None
 
-    def __init__(self, lock=None) -> None:
+    def __init__(self, interval=2, lock=None) -> None:
         """
         Initialize the CloudTransferManager.
 
@@ -133,6 +132,7 @@ class CloudTransferManager:
         - lock (Optional[object]): An optional lock object for resource synchronization.
         """
         self.cloud_transfer = CloudTransfer()
+        self.interval = int(interval)+1
         self.running = True
 
     async def batch_upload(
@@ -206,6 +206,7 @@ class CloudTransferManager:
                     break  # End of file
                 url = self.cloud_transfer.create_url(line)
                 try:
+                    print('in upload file checking intenet method')
                     await self.cloud_transfer.push_data_to_datasheet(url)
                 except CloudUploadError as e:
                     raise e
@@ -221,14 +222,15 @@ class CloudTransferManager:
             CTFlogger.logger.error("Upload failed due to no internet connection")
             raise CloudUploadError("Upload failed due to no internet connection")
 
-    def _is_connected(self) -> bool:
+    def _is_connected(self, timeout=3) -> bool:
         """
         Check if the cloud transfer is connected.
 
         Returns:
         - bool: True if connected, False otherwise.
         """
-        return is_internet_connected()
+        return is_internet_connected(timeout)
+    
 
     def get_unuploaded_files(
         self, last_upload_filepath: str, db_path: str
@@ -260,17 +262,50 @@ class CloudTransferManager:
                 if os.path.exists(dir_path):
                     yield dir_path
 
+    def get_time(self) -> str:
+        """
+        Gets the current time.
+
+        Returns:
+            str: Current time.
+        """
+        from datetime import datetime
+        return datetime.now().time().strftime("%H:%M:%S")
+    
+    def is_send_time(self, curr_time: str = None, minute_interval: int = 3) -> bool:
+        """
+        Checks if it's time to save data.
+
+        Args:
+            curr_time (str, optional): Current time string. Defaults to None.
+            minute_interval (int, optional): Interval in minutes. Defaults to 3.
+
+        Returns:
+            bool: True if it's time to save data, False otherwise.
+        """
+        if not curr_time:
+            curr_time = self.get_time()
+        curr_min = int(curr_time.split(":")[1])
+        print(curr_min)
+        if (not (curr_min % minute_interval)):
+            print('truthy')
+            return True
+        print('falsy')
+        return False
+
+
     async def start(self) -> None:
         """
         Logic for transferring data to cloud.
         """
 
         while self.running:
-            # if self._is_connected():
-            try:
-                await self.batch_upload()
-            except CloudUploadError:
-                continue
+            if self.is_send_time(minute_interval=self.interval) and self._is_connected():
+                try:
+                    print('in running')
+                    await self.batch_upload()
+                except CloudUploadError:
+                    continue
 
     def stop(self) -> None:
         self.running = False

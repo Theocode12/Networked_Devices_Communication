@@ -156,13 +156,13 @@ class HTTPCommunicationManager:
             interval (int, optional): Time interval in seconds between HTTP requests. Defaults to 900.
         """
         self.ips: List[str] = getenv("DEVICE_IPS").split(",")
-        if getenv("ENV") == "development":
-            self.env: str = "dev"
+        if getenv("MODE") == "development":
+            self.mode: str = "dev"
             self.ips: List[str] = ["localhost"]
-        elif getenv("ENV") == "inter-development":
-            self.env: str = "inter-dev"
+        elif getenv("MODE") == "inter-development":
+            self.mode: str = "inter-dev"
         else:
-            self.env: str = "prod"
+            self.mode: str = "prod"
         self.minute_interval: int = interval
         self.running: bool = True
         self.prev_min: Union[int, None] = None
@@ -175,7 +175,7 @@ class HTTPCommunicationManager:
         Returns:
             List[str]: List of URLs.
         """
-        if self.env == "dev":
+        if self.mode == "dev":
             urls = [url + ":8080/status" for url in get_urls_from_ips(self.ips)]
         else:
             urls = [url + ":/status" for url in get_urls_from_ips(self.ips)]
@@ -251,7 +251,7 @@ class HTTPCommunicationManager:
         Returns:
             str: Database path.
         """
-        if self.env == "dev" or self.env == "inter-dev":
+        if self.mode == "dev" or self.mode == "inter-dev":
             path = stg_obj.create_db_path_from_topic("dev/all")
         else:
             path = stg_obj.create_db_path_from_topic(getenv("HTTP_TOPIC"))

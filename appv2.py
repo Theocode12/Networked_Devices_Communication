@@ -62,7 +62,7 @@ if __name__ == "__main__":
 
     # Initialize managers
     mqtt_manager = mqttManager()
-    http_manager = HTTPCommunicationManager(interval=1)  # 15 minutes interval
+    http_manager = HTTPCommunicationManager(os.getenv('DATA_TRANSFER_INTERVAL'))  # 15 minutes interval
     cloud_manager = CloudTransferManager()
     # Register signal handlers for graceful termination
     signal.signal(signal.SIGINT, signal_handler)

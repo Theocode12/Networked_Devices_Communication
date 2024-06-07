@@ -1,15 +1,15 @@
 from dotenv import dotenv_values
-from typing import Union, Dict
+from typing import Union, Dict, Any
 import os
 import subprocess
 import aiohttp
 
 
-def get_base_path():
+def get_base_path() -> str:
     return "".join([os.getcwd(), "/"])
 
 
-def is_internet_connected():
+def is_internet_connected() -> bool:
     try:
         subprocess.check_output(["timeout", "1", "ping", "-c", "1", "google.com"])
         return True
@@ -56,7 +56,7 @@ def modify_data_to_dict(line: str) -> Dict[str, Union[str, float]]:
     return data_dict
 
 
-async def fetch_url(url):
+async def fetch_url(url: str) -> Any:
     async with aiohttp.ClientSession() as session:
         async with session.get(url) as resp:
             try:
@@ -71,5 +71,8 @@ async def fetch_url(url):
     return data
 
 
-def get_urls_from_ips(ips: list):
-    return [f"http://{ip}" for ip in ips]
+def get_urls_from_ips(ips: Union[list, str]) -> Union[list, str]:
+    if isinstance(ips, list):
+        return [f"http://{ip}" for ip in ips]
+    elif isinstance(ips, str):
+        return f"http://{ips}"

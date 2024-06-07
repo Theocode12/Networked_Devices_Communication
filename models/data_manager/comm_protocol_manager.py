@@ -163,7 +163,6 @@ class HTTPCommunicationManager:
             self.env: str = "inter-dev"
         else:
             self.env: str = "prod"
-        print(self.env)
         self.minute_interval: int = interval
         self.running: bool = True
         self.prev_min: Union[int, None] = None
@@ -238,7 +237,9 @@ class HTTPCommunicationManager:
                         else:
                             data_obj[key + "_" + str(i)] = value
             else:
-                self.logger.error(f"Error while fetching result {i} with ip {self.ips[i]}")
+                self.logger.error(
+                    f"Error while fetching result {i} with ip {self.ips[i]}"
+                )
 
     def create_db_path(self, stg_obj: StorageManager) -> str:
         """
@@ -293,7 +294,7 @@ class HTTPCommunicationManager:
         Returns:
             str: Current date.
         """
-        return datetime.now().date().strftime('%d/%m/%Y')
+        return datetime.now().date().strftime("%d/%m/%Y")
 
     def get_time(self) -> str:
         """

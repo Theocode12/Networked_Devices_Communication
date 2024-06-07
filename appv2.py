@@ -3,6 +3,7 @@ from models.data_manager.comm_protocol_manager import mqttManager
 from models.data_manager.comm_protocol_manager import HTTPCommunicationManager
 from models.data_manager.cloud_transfer import CloudTransferManager
 from dotenv import load_dotenv
+from typing import List
 import asyncio
 import signal
 import sys
@@ -21,19 +22,38 @@ def signal_handler(sig, frame):
     """
     Handle termination signals to gracefully shut down the application.
     """
-    # mqtt_manager.stop()
-    http_com_manager.stop()
-    cloud_transfer_manager.stop()
+    mqtt_manager.stop()
+    http_manager.stop()
+    cloud_manager.stop()
     APPlogger.logger.info("Application terminated gracefully")
     sys.exit(0)
 
 
-async def main(mqtt_manager, http_com_manager, cloud_transfer_manager):
+async def main(*args):
     # Run all managers concurrently
-    # task_1 = asyncio.create_task(mqtt_manager.start())
-    task_2 = asyncio.create_task(http_com_manager.start())
-    task_3 = asyncio.create_task(cloud_transfer_manager.start())
-    await asyncio.gather(task_2, task_3)
+    tasks = []
+    for manager in args:
+        tasks.append(asyncio.create_task(manager.start()))
+    await asyncio.gather(*tasks)
+
+
+def get_enabled_managers() -> List:
+    managers = []
+    if os.getenv("MQTT_ENABLED") == "true":
+        mqtt_manager.use_default_user_passwd_credentials()
+        mqtt_manager.connect()
+        managers.append(mqtt_manager)
+    else:
+        APPlogger.logger.info("MQTT Manager not enabled")
+    if os.getenv("HTTP_ENABLED") == "true":
+        managers.append(http_manager)
+    else:
+        APPlogger.logger.info("HTTP Manager not enabled")
+    if os.getenv("CLOUD_ENABLED") == "true":
+        managers.append(cloud_manager)
+    else:
+        APPlogger.logger.info("Cloud Manager not enabled")
+    return managers
 
 
 if __name__ == "__main__":
@@ -42,16 +62,13 @@ if __name__ == "__main__":
 
     # Initialize managers
     mqtt_manager = mqttManager()
-    # mqtt_manager.use_default_user_passwd_credentials()
-    # mqtt_manager.connect()
-    http_com_manager = HTTPCommunicationManager(interval=1)  # 15 minutes interval
-    cloud_transfer_manager = CloudTransferManager()
-
+    http_manager = HTTPCommunicationManager(interval=1)  # 15 minutes interval
+    cloud_manager = CloudTransferManager()
     # Register signal handlers for graceful termination
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
-    asyncio.run(main(mqtt_manager, http_com_manager, cloud_transfer_manager))
+    asyncio.run(main(*get_enabled_managers()))
 
     # Keep the application running
     signal.pause()

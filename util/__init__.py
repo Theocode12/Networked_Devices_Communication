@@ -4,6 +4,7 @@ import os
 import subprocess
 import aiohttp
 
+
 def get_base_path():
     return "".join([os.getcwd(), "/"])
 
@@ -55,14 +56,16 @@ def modify_data_to_dict(line: str) -> Dict[str, Union[str, float]]:
     return data_dict
 
 
-async def fetch_url(url, timeout=1, data_type="json"):
+async def fetch_url(url):
     async with aiohttp.ClientSession() as session:
-        async with session.get(url, timeout=timeout) as resp:
+        async with session.get(url) as resp:
             try:
-                if data_type == "json":
-                    data = await resp.json()
-                elif data_type == "text":
-                    data = await resp.text()
+                if resp.status == 200:
+                    if resp.content_type == "application/json":
+                        data = await resp.json()
+
+                    if resp.content_type == "text/plain":
+                        data = await resp.text()
             except Exception as e:
                 raise e
     return data

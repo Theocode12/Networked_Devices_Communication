@@ -109,9 +109,12 @@ class CloudTransfer:
             None
         """
         try:
-            data = await fetch_url(url, 20, "text")
+            data = await fetch_url(url)
+            if "success" not in data:
+                raise CloudUploadError
         except:
-            CTFlogger.logger.error('Failed to upload data to google sheet')
+            CTFlogger.logger.error("Failed to upload data to google sheet")
+            raise CloudUploadError
 
 
 class CloudTransferManager:
@@ -196,23 +199,26 @@ class CloudTransferManager:
         with meta_db:
             meta_db.fd.seek(last_uploaded_file_offset)
             finished = False
-            
             while self._is_connected():
                 line = meta_db.fd.readline()
                 if not line:
                     finished = True
                     break  # End of file
                 url = self.cloud_transfer.create_url(line)
-                await self.cloud_transfer.push_data_to_datasheet(url)
-                offset = meta_db.fd.tell()
-                meta_db.save_metadata(
-                    meta={
-                        "LastUploadedFileOffset": offset,
-                        "LastUploadedFile": filepath,
-                    }
-                )
+                try:
+                    await self.cloud_transfer.push_data_to_datasheet(url)
+                except CloudUploadError as e:
+                    raise e
+                else:
+                    offset = meta_db.fd.tell()
+                    meta_db.save_metadata(
+                        meta={
+                            "LastUploadedFileOffset": offset,
+                            "LastUploadedFile": filepath,
+                        }
+                    )
         if not finished:
-            # log the error
+            CTFlogger.logger.error("Upload failed due to no internet connection")
             raise CloudUploadError("Upload failed due to no internet connection")
 
     def _is_connected(self) -> bool:
@@ -237,33 +243,36 @@ class CloudTransferManager:
         Returns:
         - List[str]: A list of unuploaded files.
         """
-        
-        last_upload_date = datetime.datetime.strptime(last_upload_filepath, 
-        os.path.join(db_path, '%Y/%m/%d/inverter/all'))
+
+        last_upload_date = datetime.datetime.strptime(
+            last_upload_filepath, os.path.join(db_path, "%Y/%m/%d/inverter/all")
+        )
         current_date = datetime.datetime.now()
         date_range = (current_date - last_upload_date).days
         if date_range == 0:
             yield last_upload_filepath
         else:
-            for i in range(1, date_range+1):
+            for i in range(1, date_range + 1):
                 date = last_upload_date + datetime.timedelta(days=i)
-                dir_path = os.path.join(db_path, date.strftime('%Y/%m/%d'), 'inverter', 'all')
+                dir_path = os.path.join(
+                    db_path, date.strftime("%Y/%m/%d"), "inverter", "all"
+                )
                 if os.path.exists(dir_path):
                     yield dir_path
 
-    async def start(self):
+    async def start(self) -> None:
         """
         Logic for transferring data to cloud.
         """
 
         while self.running:
             # if self._is_connected():
-                try:
-                    await self.batch_upload()
-                except CloudUploadError:
-                    continue
+            try:
+                await self.batch_upload()
+            except CloudUploadError:
+                continue
 
-    def stop(self):
+    def stop(self) -> None:
         self.running = False
         CTFlogger.logger.info("Cloud Trasfer manager stopped")
 
@@ -273,7 +282,9 @@ if __name__ == "__main__":
 
     load_dotenv("./config/.env")
     ctf = CloudTransfer()
-    url = ctf.create_url('date=06/06/2024,time=21:28:00,PoutW_0=0,Vpv_0=0,BuckCurr_0=0,Ppv_0=0,PoutVA_0=193,BusVolt_0=407.9,Vbat=50.8,PoutW_1=210,Vpv_1=0,BuckCurr_1=0,Ppv_1=0,PoutVA_1=244,BusVolt_1=402.5,PoutW_2=127,Vpv_2=0,BuckCurr_2=0,Ppv_2=0,PoutVA_2=193,BusVolt_2=405.6')
+    url = ctf.create_url(
+        "date=06/06/2024,time=21:28:00,PoutW_0=0,Vpv_0=0,BuckCurr_0=0,Ppv_0=0,PoutVA_0=193,BusVolt_0=407.9,Vbat=50.8,PoutW_1=210,Vpv_1=0,BuckCurr_1=0,Ppv_1=0,PoutVA_1=244,BusVolt_1=402.5,PoutW_2=127,Vpv_2=0,BuckCurr_2=0,Ppv_2=0,PoutVA_2=193,BusVolt_2=405.6"
+    )
     # asyncio.run(ctf.push_data_to_datasheet(url))
     print(url)
     # print(is_internet_connected())

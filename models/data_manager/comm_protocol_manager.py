@@ -5,7 +5,7 @@ from models.data_manager.storage_manager import StorageManager
 from typing import List, Dict, Union
 from typing import Tuple
 from os import getenv
-from util import fetch_url, get_urls_from_ips
+from util import fetch_url, get_urls_from_ips, convert_to_int_or_leave_unchanged
 import asyncio
 import paho.mqtt.client as mqtt
 import time
@@ -163,7 +163,7 @@ class HTTPCommunicationManager:
             self.mode: str = "inter-dev"
         else:
             self.mode: str = "prod"
-        self.minute_interval: int = interval
+        self.minute_interval: int = int(interval)
         self.running: bool = True
         self.prev_min: Union[int, None] = None
         self.logger = ModelLogger("http-manager").customiseLogger()

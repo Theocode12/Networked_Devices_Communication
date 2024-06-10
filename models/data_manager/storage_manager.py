@@ -1,7 +1,8 @@
 from models.db_engine.db import FileDB
 from models import ModelLogger
-from typing import Sequence, Dict
+from typing import Dict, Iterator
 from util import get_base_path
+import datetime
 import os
 
 
@@ -51,6 +52,46 @@ class StorageManager:
         dir = self.db.get_db_filedir(create=False)
         return os.path.join(dir, topic.lstrip("/"))
 
+    @staticmethod
+    def get_unuploaded_files(last_upload_filepath: str, db_path: str) -> Iterator[str]:
+        """
+        Get a list of unuploaded files based on the last upload file date.
+
+        Parameters:
+        - last_upload_file_date (List[str]): The date components of the last upload file.
+        - db_path (str): The path to the database.
+
+        Returns:
+        - List[str]: A list of unuploaded files.
+        """
+        from os import getenv
+
+        mode = getenv("MODE")
+
+        if mode == "dev" or mode == "inter-dev":
+            last_upload_date = datetime.datetime.strptime(
+                last_upload_filepath, os.path.join(db_path, "%Y/%m/%d/dev/all")
+            )
+        else:
+            last_upload_date = datetime.datetime.strptime(
+                last_upload_filepath, os.path.join(db_path, "%Y/%m/%d/inverter/all")
+            )
+        current_date = datetime.datetime.now()
+        date_range = (current_date - last_upload_date).days
+
+        for i in range(0, date_range + 1):
+            date = last_upload_date + datetime.timedelta(days=i)
+            if mode == "dev" or mode == "inter-dev":
+                dir_path = os.path.join(
+                    db_path, date.strftime("%Y/%m/%d"), "dev", "all"
+                )
+            else:
+                dir_path = os.path.join(
+                    db_path, date.strftime("%Y/%m/%d"), "inverter", "all"
+                )
+            if os.path.exists(dir_path):
+                yield dir_path
+
     def create_db_path_from_topic(self, topic: str):
         """
         Create the file path for the database based on the topic.
@@ -78,5 +119,8 @@ class StorageManager:
 
 if __name__ == "__main__":
     stg = StorageManager()
-    path = stg.create_db_path_from_topic("/dev/test")
-    stg.save(path, {"topic": "/dev/test"})
+    for file in stg.get_unuploaded_files(
+        "/home/valentine/Solar_Station_Communication/data/2024/06/09/dev/all",
+        "/home/valentine/Solar_Station_Communication/data/",
+    ):
+        print(file)

@@ -1,14 +1,13 @@
 from config import SAVE_KEYS, DUPLICATE_KEYS
 from datetime import datetime
 from models import ModelLogger
+from models.data_manager import BaseManager
 from models.data_manager.storage_manager import StorageManager
-from typing import List, Dict, Union
-from typing import Tuple
+from typing import List, Dict, Union, Optional, Tuple
 from os import getenv
-from util import fetch_url, get_urls_from_ips, convert_to_int_or_leave_unchanged
+from util import fetch_url, get_urls_from_ips
 import asyncio
 import paho.mqtt.client as mqtt
-import time
 
 
 class mqttManagerLogger:
@@ -59,7 +58,7 @@ def on_message(client, userdata, msg):
     manager.manage_data(msg)
 
 
-class mqttManager:
+class mqttManager(BaseManager):
     """
     A manager class for handling MQTT connections and messaging.
     """
@@ -147,70 +146,45 @@ class mqttManager:
         self.client.disconnect()
 
 
-class HTTPCommunicationManager:
-    def __init__(self, interval: int = 15) -> None:
+class HTTPCommunicationManager(BaseManager):
+    def __init__(self, lock: Optional[asyncio.Lock] = None, **kwargs) -> None:
         """
         Initializes the HTTPCommunicationManager.
 
         Args:
-            interval (int, optional): Time interval in seconds between HTTP requests. Defaults to 900.
+            lock: used to lock shared resources like network connections
+            kwargs: additional keyword arguments like hour, minute, second to specify interval to collect metrics.
         """
-        self.ips: List[str] = getenv("DEVICE_IPS").split(",")
-        if getenv("MODE") == "development":
+        self.ips: List[str] = getenv("DEVICE_IPS", "").split(",")
+        self.kwargs: Dict = kwargs
+        self.running: bool = True
+        self.prev_time: Optional[datetime] = None
+        self.lock = lock if lock is not None else asyncio.Lock()
+        self.logger = ModelLogger("http-manager").customiseLogger()
+
+        if getenv("MODE") == "dev":
             self.mode: str = "dev"
             self.ips: List[str] = ["localhost"]
-        elif getenv("MODE") == "inter-development":
+        elif getenv("MODE") == "inter-dev":
             self.mode: str = "inter-dev"
         else:
             self.mode: str = "prod"
-        self.minute_interval: int = int(interval)
-        self.running: bool = True
-        self.prev_min: Union[int, None] = None
-        self.logger = ModelLogger("http-manager").customiseLogger()
 
-    def get_urls(self) -> List[str]:
+    def create_db_path(self, stg_obj: StorageManager) -> str:
         """
-        Generates URLs based on environment.
-
-        Returns:
-            List[str]: List of URLs.
-        """
-        if self.mode == "dev":
-            urls = [url + ":8080/status" for url in get_urls_from_ips(self.ips)]
-        else:
-            urls = [url + ":/status" for url in get_urls_from_ips(self.ips)]
-        return urls
-
-    async def start(self) -> None:
-        """
-        Asynchronous task for HTTP communication.
-        """
-        self.logger.info("HTTP communication manager started ...")
-        stg_obj = StorageManager()
-        while self.running:
-            if self.is_save_time(minute_interval=self.minute_interval):
-                data = {}
-                data.update(self.get_date_time())
-                results = await asyncio.gather(
-                    *(fetch_url(url) for url in self.get_urls()), return_exceptions=True
-                )
-                self.format_data(results, data)
-                path = self.create_db_path(stg_obj)
-                self.save_data(stg_obj, path, data)
-
-    def save_data(
-        self, stg_obj: StorageManager, path: str, data: Dict[str, Union[str, int]]
-    ) -> None:
-        """
-        Saves data to storage.
+        Creates a database path based on environment.
 
         Args:
             stg_obj (Any): Storage object.
-            path (str): Path to save data.
-            data (Dict[str, Union[str, int]]): Data to save.
+
+        Returns:
+            str: Database path.
         """
-        stg_obj.save(path, data)
-        self.logger.info("Data from atleast one inverter is  data stored")
+        if self.mode == "dev" or self.mode == "inter-dev":
+            path = stg_obj.create_db_path_from_topic("dev/all")
+        else:
+            path = stg_obj.create_db_path_from_topic(getenv("HTTP_TOPIC"))
+        return path
 
     def format_data(
         self,
@@ -241,52 +215,6 @@ class HTTPCommunicationManager:
                     f"Error while fetching result {i} with ip {self.ips[i]}"
                 )
 
-    def create_db_path(self, stg_obj: StorageManager) -> str:
-        """
-        Creates a database path based on environment.
-
-        Args:
-            stg_obj (Any): Storage object.
-
-        Returns:
-            str: Database path.
-        """
-        if self.mode == "dev" or self.mode == "inter-dev":
-            path = stg_obj.create_db_path_from_topic("dev/all")
-        else:
-            path = stg_obj.create_db_path_from_topic(getenv("HTTP_TOPIC"))
-        return path
-
-    def is_save_time(self, curr_time: str = None, minute_interval: int = 15) -> bool:
-        """
-        Checks if it's time to save data.
-
-        Args:
-            curr_time (str, optional): Current time string. Defaults to None.
-            minute_interval (int, optional): Interval in minutes. Defaults to 15.
-
-        Returns:
-            bool: True if it's time to save data, False otherwise.
-        """
-        if not curr_time:
-            curr_time = self.get_time()
-        curr_min = int(curr_time.split(":")[1])
-        if (not (curr_min % minute_interval)) and (
-            (self.prev_min != curr_min) or (self.prev_min is None)
-        ):
-            self.prev_min = curr_min
-            return True
-        return False
-
-    def get_date_time(self) -> Dict[str, str]:
-        """
-        Gets the current date and time.
-
-        Returns:
-            Dict[str, str]: Dictionary containing date and time.
-        """
-        return {"date": self.get_date(), "time": self.get_time()}
-
     def get_date(self) -> str:
         """
         Gets the current date.
@@ -305,6 +233,115 @@ class HTTPCommunicationManager:
         """
         return datetime.now().time().strftime("%H:%M:%S")
 
+    def get_date_time(self) -> Dict[str, str]:
+        """
+        Gets the current date and time.
+
+        Returns:
+            Dict[str, str]: Dictionary containing date and time.
+        """
+        return {"date": self.get_date(), "time": self.get_time()}
+
+    def get_urls(self) -> List[str]:
+        """
+        Generates URLs based on environment.
+
+        Returns:
+            List[str]: List of URLs.
+        """
+        if self.mode == "dev":
+            urls = [url + ":8080/status" for url in get_urls_from_ips(self.ips)]
+        else:
+            urls = [url + ":/status" for url in get_urls_from_ips(self.ips)]
+        return urls
+
+    def is_save_time(
+        self, hour: int = None, minute: int = None, second: int = None, now=None
+    ) -> bool:
+        """
+        Returns True if the current time matches the given interval of hours, minutes, or seconds.
+
+        Parameters:
+        - hour (int, optional): Interval for hours.
+        - minute (int, optional): Interval for minutes.
+        - second (int, optional): Interval for seconds.
+
+        Returns:
+        - bool: True if the current time matches the given interval, False otherwise.
+        """
+        hour = hour if hour is not None else self.kwargs.get("hour")
+        minute = minute if minute is not None else self.kwargs.get("minute")
+        second = second if second is not None else self.kwargs.get("second")
+
+        now = now or datetime.now()
+
+        if self.prev_time is not None:
+            if (
+                hour is not None
+                and now.hour % hour == 0
+                and self.prev_time.hour != now.hour
+            ):
+                self.prev_time = now
+                return True
+            if (
+                minute is not None
+                and now.minute % minute == 0
+                and self.prev_time.minute != now.minute
+            ):
+                self.prev_time = now
+                return True
+            if (
+                second is not None
+                and now.second % second == 0
+                and self.prev_time.second != now.second
+            ):
+                self.prev_time = now
+                return True
+        else:
+            if (
+                (hour is not None and now.hour % hour == 0)
+                or (minute is not None and now.minute % minute == 0)
+                or (second is not None and now.second % second == 0)
+            ):
+                self.prev_time = now
+                return True
+
+        return False
+
+    def save_data(
+        self, stg_obj: StorageManager, path: str, data: Dict[str, Union[str, int]]
+    ) -> None:
+        """
+        Saves data to storage.
+
+        Args:
+            stg_obj (Any): Storage object.
+            path (str): Path to save data.
+            data (Dict[str, Union[str, int]]): Data to save.
+        """
+        stg_obj.save(path, data)
+        self.logger.info("Data from atleast one inverter is  data stored")
+
+    async def start(self) -> None:
+        """
+        Asynchronous task for HTTP communication.
+        """
+        self.logger.info("HTTP communication manager started ...")
+        stg_obj = StorageManager()
+        while self.running:
+            if self.is_save_time():
+                data = {}
+                data.update(self.get_date_time())
+                async with self.lock:
+                    results = await asyncio.gather(
+                        *(fetch_url(url) for url in self.get_urls()),
+                        return_exceptions=True,
+                    )
+                self.format_data(results, data)
+                path = self.create_db_path(stg_obj)
+                self.save_data(stg_obj, path, data)
+            await asyncio.sleep(1)
+
     def stop(self) -> None:
         """
         Stops the HTTP communication manager.
@@ -315,12 +352,13 @@ class HTTPCommunicationManager:
 
 async def main():
     import dotenv
+    import datetime
 
     dotenv.load_dotenv("./config/.env")
-    hccm = HTTPCommunicationManager(1)
-    task = asyncio.create_task(hccm.start())
-    await task
-    task.cancel()
+    # now = datetime.time(12,30,10)
+    # now = None
+    hccm = HTTPCommunicationManager(minute=15)
+    await hccm.start()
 
 
 if __name__ == "__main__":

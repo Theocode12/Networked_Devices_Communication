@@ -1,7 +1,7 @@
 from models import ModelLogger
-from models.data_manager.comm_protocol_manager import mqttManager
-from models.data_manager.comm_protocol_manager import HTTPCommunicationManager
+from models.data_manager.comm_protocol_manager import mqttManager, HTTPCommunicationManager
 from models.data_manager.cloud_transfer import CloudTransferManager
+from models.data_manager import BaseManager
 from dotenv import load_dotenv
 from typing import List
 import asyncio
@@ -29,7 +29,7 @@ def signal_handler(sig, frame):
     sys.exit(0)
 
 
-async def main(*args):
+async def main(*args: BaseManager):
     # Run all managers concurrently
     tasks = []
     for manager in args:
@@ -60,10 +60,16 @@ if __name__ == "__main__":
     load_dotenv("./config/.env")
     APPlogger.logger.info("Application started")
 
+    lock = asyncio.Lock()
+
     # Initialize managers
     mqtt_manager = mqttManager()
-    http_manager = HTTPCommunicationManager(os.getenv('DATA_TRANSFER_INTERVAL'))  # 15 minutes interval default
-    cloud_manager = CloudTransferManager(os.getenv('DATA_TRANSFER_INTERVAL')) # minutes interval
+    http_manager = HTTPCommunicationManager(
+        lock=lock, minute=int(os.getenv("DATA_TRANSFER_INTERVAL"))
+    )  # 15 minutes interval default
+    cloud_manager = CloudTransferManager(
+        lock=lock, minute=int(os.getenv("DATA_TRANSFER_INTERVAL"))
+    )  # minutes interval
     # Register signal handlers for graceful termination
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)

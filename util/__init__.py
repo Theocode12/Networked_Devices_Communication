@@ -11,7 +11,9 @@ def get_base_path() -> str:
 
 def is_internet_connected(timeout: int = 1) -> bool:
     try:
-        subprocess.check_output(["timeout", str(timeout), "ping", "-c", "1", "google.com"])
+        subprocess.check_output(
+            ["timeout", str(timeout), "ping", "-c", "1", "google.com"]
+        )
         return True
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
         return False
@@ -59,7 +61,7 @@ def modify_data_to_dict(line: str) -> Dict[str, Union[str, float]]:
 async def fetch_url(url: str) -> Any:
     async with aiohttp.ClientSession() as session:
         async with session.get(url) as resp:
-            try: 
+            try:
                 if resp.status == 200:
                     if resp.content_type == "application/json":
                         data = await resp.json()
@@ -71,13 +73,13 @@ async def fetch_url(url: str) -> Any:
             resp.release()
     return data
 
-async def fetch_url_spreadsheet(url: str)-> Any:
+
+async def fetch_url_spreadsheet(url: str) -> Any:
     async with aiohttp.ClientSession() as session:
         async with session.get(url) as resp:
             try:
-                print(resp.history)
                 if resp.status == 200:
-                        data = await resp.text()
+                    data = await resp.text()
             except Exception as e:
                 raise e
             resp.release()

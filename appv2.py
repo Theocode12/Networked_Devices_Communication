@@ -1,5 +1,8 @@
 from models import ModelLogger
-from models.data_manager.comm_protocol_manager import mqttManager, HTTPCommunicationManager
+from models.data_manager.comm_protocol_manager import (
+    mqttManager,
+    HTTPCommunicationManager,
+)
 from models.data_manager.cloud_transfer import CloudTransferManager
 from models.data_manager import BaseManager
 from dotenv import load_dotenv
@@ -65,11 +68,17 @@ if __name__ == "__main__":
     # Initialize managers
     mqtt_manager = mqttManager()
     http_manager = HTTPCommunicationManager(
-        lock=lock, minute=int(os.getenv("DATA_TRANSFER_INTERVAL"))
-    )  # 15 minutes interval default
+        lock=lock,
+        hour=int(os.getenv("DT_INTERVAL_HR")),
+        minute=int(os.getenv("DT_INTERVAL_MIN")),
+        seconds=int(os.getenv("DT_INTERVAL_SEC")),
+    )
     cloud_manager = CloudTransferManager(
-        lock=lock, minute=int(os.getenv("DATA_TRANSFER_INTERVAL"))
-    )  # minutes interval
+        lock=lock,
+        hour=int(os.getenv("DT_INTERVAL_HR")),
+        minute=int(os.getenv("DT_INTERVAL_MIN")),
+        seconds=int(os.getenv("DT_INTERVAL_SEC")),
+    )
     # Register signal handlers for graceful termination
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)

@@ -224,9 +224,9 @@ class CloudTransferManager(BaseManager):
                 return False
         else:
             if (
-                (hour is not None and now.hour % hour == 0)
-                or (minute is not None and now.minute % minute == 0)
-                or (second is not None and now.second % second == 0)
+                (hour is not None and hour != 0 and now.hour % hour == 0)
+                or (minute is not None and minute != 0 and now.minute % minute == 0)
+                or (second is not None and second !=0 and now.second % second == 0)
             ):
                 self.prev_time = now
                 return False

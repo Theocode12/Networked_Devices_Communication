@@ -299,9 +299,9 @@ class HTTPCommunicationManager(BaseManager):
                 return True
         else:
             if (
-                (hour is not None and now.hour % hour == 0)
-                or (minute is not None and now.minute % minute == 0)
-                or (second is not None and now.second % second == 0)
+                (hour is not None and hour != 0 and now.hour % hour == 0)
+                or (minute is not None and minute != 0 and now.minute % minute == 0)
+                or (second is not None and second !=0 and now.second % second == 0)
             ):
                 self.prev_time = now
                 return True
@@ -331,15 +331,16 @@ class HTTPCommunicationManager(BaseManager):
         while self.running:
             if self.is_save_time():
                 data = {}
-                data.update(self.get_date_time())
                 async with self.lock:
                     results = await asyncio.gather(
                         *(fetch_url(url) for url in self.get_urls()),
                         return_exceptions=True,
                     )
                 self.format_data(results, data)
-                path = self.create_db_path(stg_obj)
-                self.save_data(stg_obj, path, data)
+                if len(data) != 0:
+                    data.update(self.get_date_time())
+                    path = self.create_db_path(stg_obj)
+                    self.save_data(stg_obj, path, data)
             await asyncio.sleep(1)
 
     def stop(self) -> None:

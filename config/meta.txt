@@ -1,2 +1,2 @@
-LastUploadedFile=/home/user/Solar_Station_Communication/data/2024/06/06/inverter/all
-LastUploadedFileOffset=247
+LastUploadedFile=/home/user/Solar_Station_Communication/data/2024/06/14/inverter/all
+LastUploadedFileOffset=16547

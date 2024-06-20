@@ -1,7 +1,7 @@
-# Solar Station Communication Application
+# Networked device Communication Application
 
 ## Overview
-The Solar Station Communication application is designed to facilitate data collection from solar inverters and any other networked devices using both MQTT and HTTP protocols. This application manages the collection, storage, and transfer of data, ensuring efficient and reliable communication for solar power systems.
+The networked devive communication application is designed to facilitate data collection from networked devices using both MQTT and HTTP protocols. This application manages the collection, storage, and transfer of data, ensuring efficient and reliable communication for solar power systems.
 
 ## Features
 - **MQTT Communication**: Manages MQTT connections, subscribes to topics, and processes incoming messages.
